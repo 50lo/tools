@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: git copy [--force] <branch> <source> [destination]"
+  echo
+  echo "Copies a file or folder from another branch into the current working tree."
+  echo "Example:"
+  echo "  git copy tasks/fix-cleanup-script src/scripts/cleanup.sh"
+  echo
+  exit 1
+}
+
+# --- Argument validation ---
+FORCE_OVERWRITE=false
+
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+if [[ "$1" == "--force" ]]; then
+  FORCE_OVERWRITE=true
+  shift
+fi
+
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  usage
+fi
+
+SOURCE_BRANCH="$1"
+SOURCE_PATH="$2"
+DESTINATION_PATH="${3:-$SOURCE_PATH}"
+
+# Check if branch exists
+if ! git rev-parse --verify "$SOURCE_BRANCH" >/dev/null 2>&1; then
+  echo "Error: branch '$SOURCE_BRANCH' not found." >&2
+  exit 1
+fi
+
+# Check if source path exists in that branch
+if ! git ls-tree -r "$SOURCE_BRANCH" --name-only | grep -qx "$SOURCE_PATH"; then
+  if git ls-tree -d "$SOURCE_BRANCH" --name-only | grep -qx "$SOURCE_PATH"; then
+    IS_DIR=true
+  else
+    echo "Error: path '$SOURCE_PATH' not found in branch '$SOURCE_BRANCH'." >&2
+    exit 1
+  fi
+else
+  IS_DIR=false
+fi
+
+# Confirm overwrite if destination exists
+if [[ -e "$DESTINATION_PATH" && "$FORCE_OVERWRITE" == false ]]; then
+  read -p "File/folder '$DESTINATION_PATH' exists. Overwrite? [y/N] " CONFIRM
+  if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 0
+  fi
+fi
+
+# Ensure parent directory exists
+mkdir -p "$(dirname "$DESTINATION_PATH")"
+
+# Copy file or folder
+if [[ "$IS_DIR" == true ]]; then
+  echo "Copying folder '$SOURCE_PATH' from '$SOURCE_BRANCH' to '$DESTINATION_PATH'..."
+  tmpdir=$(mktemp -d)
+  git archive "$SOURCE_BRANCH" "$SOURCE_PATH" | tar -x -C "$tmpdir"
+  mkdir -p "$DESTINATION_PATH"
+  rsync -a --delete "$tmpdir/$SOURCE_PATH/" "$DESTINATION_PATH/"
+  rm -rf "$tmpdir"
+else
+  echo "Copying file '$SOURCE_PATH' from '$SOURCE_BRANCH' to '$DESTINATION_PATH'..."
+  git show "${SOURCE_BRANCH}:${SOURCE_PATH}" > "${DESTINATION_PATH}"
+fi
+
+echo "Copied successfully from '$SOURCE_BRANCH'."
+echo "You can now: git add '$DESTINATION_PATH'"

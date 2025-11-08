@@ -1,0 +1,76 @@
+.TH GIT-COPY 1 "2024-05-22" "git-copy" "User Commands"
+.SH NAME
+git-copy \- copy files or directories from another branch without switching
+.SH SYNOPSIS
+.B git copy
+.RI [ --force ]
+.IR path 
+.IR branch
+.SH DESCRIPTION
+.B git-copy
+is a lightweight custom Git command for copying files or folders from another
+branch into the current working tree without changing your checked out branch.
+It lets you grab a specific script, config, or directory from another branch
+without merging or cherry-picking.
+.P
+The command validates that the source branch and path exist before copying.
+When the target already exists, it prompts before overwriting unless the
+.B --force
+flag is provided.
+.SH OPTIONS
+.TP
+.B --force
+Skip the overwrite confirmation prompt when the destination path already
+exists.
+.SH FEATURES
+.TP
+.B Works with files and folders
+Use the same command for single files or entire directories.
+.TP
+.B Safe by default
+Validates branches and paths before copying, and confirms overwrites unless
+.B --force
+is used.
+.TP
+.B Efficient for directories
+Relies on
+.BR git-archive (1)
+under the hood to copy directories quickly without polluting your working
+history.
+.TP
+.B No external dependencies
+Implemented entirely in POSIX shell so it works anywhere Git is available.
+.SH HOW IT WORKS
+.IP \(bu 2
+For files it runs
+.BR "git show" " " "<branch>:<path>"
+ and writes the contents into your working tree.
+.IP \(bu 2
+For directories it streams
+.BR git-archive (1)
+for the requested branch and folder into a temporary directory and then
+synchronises it into your working tree.
+.P
+Your index stays untouched because nothing gets checked out or merged.
+.SH EXAMPLES
+.TP
+Copy a single file from another branch
+.EX
+$ git copy src/scripts/cleanup.sh feature/new-cleanup
+.EE
+.TP
+Copy an entire directory
+.EX
+$ git copy src/utils feature/tooling-updates
+.EE
+.SH WORKFLOW EXAMPLE
+Grab a fix from another branch and commit it locally.
+.EX
+$ git copy src/scripts/cleanup.sh tasks/fix-cleanup-script
+$ git add src/scripts/cleanup.sh
+$ git commit -m "Update cleanup script from fix-cleanup-script branch"
+.EE
+.SH SEE ALSO
+.BR git (1),
+.BR git-archive (1),
+.BR git-show (1)
