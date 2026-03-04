@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Token Counter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0c0e;
+      --surface: #131317;
+      --border: #222228;
+      --accent: #e8ff47;
+      --accent-dim: #c8dd30;
+      --text: #f0f0f0;
+      --muted: #5a5a6a;
+      --danger: #ff4f4f;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 760px;
+    }
+
+    header {
+      margin-bottom: 40px;
+    }
+
+    .label-chip {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 3px 10px;
+      border-radius: 2px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    h1 span {
+      color: var(--accent);
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+      letter-spacing: 0.04em;
+    }
+
+    /* Model selector */
+    .model-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .model-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 6px 14px;
+      border-radius: 2px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .model-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .model-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #000;
+    }
+
+    /* Textarea */
+    .textarea-wrap {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      padding: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15.5px;
+      line-height: 1.7;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+      caret-color: var(--accent);
+    }
+
+    textarea:focus {
+      border-color: #3a3a46;
+    }
+
+    textarea::placeholder {
+      color: var(--muted);
+    }
+
+    .clear-btn {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 2px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      opacity: 0;
+    }
+
+    .clear-btn.visible { opacity: 1; }
+    .clear-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Stats grid */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 600px) {
+      .stats { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 18px 16px;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card.primary {
+      border-color: var(--accent);
+      background: rgba(232, 255, 71, 0.04);
+    }
+
+    .stat-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .stat-card.primary .stat-label { color: var(--accent-dim); }
+
+    .stat-value {
+      font-family: 'Syne', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1;
+      transition: all 0.15s;
+    }
+
+    .stat-card.primary .stat-value { color: var(--accent); }
+
+    .stat-sub {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+
+    /* Token limit bar */
+    .limit-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+    }
+
+    .limit-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+
+    .limit-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .limit-pct {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .limit-pct.warn { color: #ffb347; }
+    .limit-pct.danger { color: var(--danger); }
+
+    .progress-track {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease, background 0.3s;
+    }
+
+    .progress-fill.warn { background: #ffb347; }
+    .progress-fill.danger { background: var(--danger); }
+
+    .limit-models {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .limit-model-tag {
+      font-size: 10px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .limit-model-tag .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .limit-model-tag .dot.ok { background: var(--accent); }
+    .limit-model-tag .dot.warn { background: #ffb347; }
+    .limit-model-tag .dot.over { background: var(--danger); }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .status-dot.ready { background: var(--accent); animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-dot.loading { background: #ffb347; }
+
+    /* Number animation */
+    @keyframes pop {
+      0% { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+
+    .pop { animation: pop 0.15s ease-out; }
+
+    /* Token visualization */
+    .viz-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .viz-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .viz-title {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .viz-legend {
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .viz-body {
+      padding: 16px;
+      min-height: 56px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px;
+      line-height: 1.9;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+
+    .viz-empty {
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+
+    .tok {
+      border-radius: 2px;
+      padding: 1px 0;
+      /* colors set inline via CSS vars */
+    }
+
+    /* Newline tokens shown as visible markers */
+    .tok-nl::after {
+      content: '↵';
+      font-size: 9px;
+      opacity: 0.5;
+      margin-left: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="label-chip">Token Counter</div>
+      <h1>Count <span>tokens</span></h1>
+      <p class="subtitle">// Uses gpt-tokenizer (tiktoken port) · Real BPE encoding · No server</p>
+    </header>
+
+    <div class="model-bar" id="modelBar">
+      <button class="model-btn active" data-enc="cl100k_base">Claude / GPT-4</button>
+      <button class="model-btn" data-enc="o200k_base">GPT-5 / o3</button>
+      <button class="model-btn" data-enc="p50k_base">GPT-3 (legacy)</button>
+    </div>
+
+    <div class="textarea-wrap">
+      <textarea id="input" placeholder="Paste or type your text here…" spellcheck="false"></textarea>
+      <button class="clear-btn" id="clearBtn">✕ Clear</button>
+    </div>
+
+    <div class="viz-section">
+      <div class="viz-header">
+        <span class="viz-title">Token Visualization</span>
+        <span class="viz-legend">each colour = one token</span>
+      </div>
+      <div class="viz-body" id="vizBody">
+        <span class="viz-empty">Start typing to see tokens highlighted…</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card primary">
+        <div class="stat-label">Tokens</div>
+        <div class="stat-value" id="tokenCount">0</div>
+        <div class="stat-sub" id="encLabel">cl100k_base</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Characters</div>
+        <div class="stat-value" id="charCount">0</div>
+        <div class="stat-sub">incl. spaces</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Words</div>
+        <div class="stat-value" id="wordCount">0</div>
+        <div class="stat-sub">whitespace split</div>
+      </div>
+    </div>
+
+  <!-- gpt-tokenizer via unpkg — loads all encodings as globals -->
+  <script src="https://unpkg.com/gpt-tokenizer/dist/cl100k_base.js"></script>
+  <script src="https://unpkg.com/gpt-tokenizer/dist/o200k_base.js"></script>
+  <script src="https://unpkg.com/gpt-tokenizer/dist/p50k_base.js"></script>
+  <script src="https://unpkg.com/gpt-tokenizer/dist/r50k_base.js"></script>
+  <script>
+    // Encoder global names exposed by unpkg builds
+    const ENCODERS = {
+      cl100k_base: () => GPTTokenizer_cl100k_base,
+      o200k_base:  () => GPTTokenizer_o200k_base,
+      p50k_base:   () => GPTTokenizer_p50k_base,
+      r50k_base:   () => GPTTokenizer_r50k_base,
+    };
+
+    let currentEnc = 'cl100k_base';
+    let ready = false;
+
+    const input       = document.getElementById('input');
+    const clearBtn    = document.getElementById('clearBtn');
+    const tokenCount  = document.getElementById('tokenCount');
+    const charCount   = document.getElementById('charCount');
+    const wordCount   = document.getElementById('wordCount');
+    const encLabel    = document.getElementById('encLabel');
+    const vizBody     = document.getElementById('vizBody');
+    // const limitPct    = document.getElementById('limitPct');
+    // const progressFill= document.getElementById('progressFill');
+    // const limitModels = document.getElementById('limitModels');
+    const statusDot   = document.getElementById('statusDot');
+    const statusText  = document.getElementById('statusText');
+
+    // 8 muted but distinct token colours for dark bg
+    const TOKEN_COLORS = [
+      { bg: 'rgba(232,255,71,0.13)',  fg: '#c8dd30' },
+      { bg: 'rgba(100,180,255,0.13)', fg: '#6ab4ff' },
+      { bg: 'rgba(255,120,180,0.13)', fg: '#ff78b4' },
+      { bg: 'rgba(100,255,180,0.13)', fg: '#64ffb4' },
+      { bg: 'rgba(255,160,80,0.13)',  fg: '#ffa050' },
+      { bg: 'rgba(180,120,255,0.13)', fg: '#b478ff' },
+      { bg: 'rgba(80,220,220,0.13)',  fg: '#50dcdc' },
+      { bg: 'rgba(255,200,80,0.13)',  fg: '#ffc850' },
+    ];
+
+    function renderViz(tokenIds, enc) {
+      if (tokenIds.length === 0) {
+        vizBody.innerHTML = '<span class="viz-empty">Start typing to see tokens highlighted…</span>';
+        return;
+      }
+
+      const decoder = ENCODERS[enc]();
+      const html = tokenIds.map((id, i) => {
+        const color = TOKEN_COLORS[i % TOKEN_COLORS.length];
+        // Decode single token
+        let text;
+        try {
+          text = decoder.decode([id]);
+        } catch(e) {
+          text = '?';
+        }
+
+        const hasNewline = text.includes('\n');
+        // Escape HTML
+        const safe = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
+        const cls = hasNewline ? 'tok tok-nl' : 'tok';
+        return `<span class="${cls}" style="background:${color.bg};color:${color.fg}" title="token #${i+1} · id ${id}">${safe}</span>`;
+      }).join('');
+
+      vizBody.innerHTML = html;
+    }
+
+    function waitForEncoders() {
+      const check = setInterval(() => {
+        try {
+          if (typeof GPTTokenizer_cl100k_base !== 'undefined' &&
+              typeof GPTTokenizer_o200k_base  !== 'undefined') {
+            clearInterval(check);
+            ready = true;
+            statusDot.className = 'status-dot ready';
+            statusText.textContent = 'Ready · gpt-tokenizer loaded via unpkg';
+            // renderLimitModels(0);
+            update();
+          }
+        } catch(e) {}
+      }, 100);
+    }
+
+    function encode(text, enc) {
+      try {
+        return ENCODERS[enc]().encode(text);
+      } catch(e) {
+        return [];
+      }
+    }
+
+    function animatePop(el) {
+      el.classList.remove('pop');
+      void el.offsetWidth;
+      el.classList.add('pop');
+    }
+
+    function update() {
+      const text = input.value;
+      const chars = text.length;
+      const words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+
+      charCount.textContent = chars.toLocaleString();
+      wordCount.textContent = words.toLocaleString();
+
+      if (!ready) return;
+
+      const tokens = encode(text, currentEnc);
+      const tCount = tokens.length;
+
+      animatePop(tokenCount);
+      tokenCount.textContent = tCount.toLocaleString();
+
+      renderViz(tokens, currentEnc);
+      clearBtn.className = 'clear-btn' + (text.length ? ' visible' : '');
+    }
+
+    // Model selector
+    document.getElementById('modelBar').addEventListener('click', e => {
+      const btn = e.target.closest('.model-btn');
+      if (!btn) return;
+      document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentEnc = btn.dataset.enc;
+      encLabel.textContent = currentEnc;
+      update();
+    });
+
+    input.addEventListener('input', update);
+
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      update();
+      input.focus();
+    });
+
+    waitForEncoders();
+  </script>
+</body>
+</html>
