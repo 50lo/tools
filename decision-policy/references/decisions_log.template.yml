@@ -1,0 +1,32 @@
+# Append-only material decision log.
+# Log tradeoffs, assumptions, user-visible behavior, architecture choices,
+# and choices future agents may otherwise re-litigate.
+# Do not log every tiny implementation detail.
+
+[]
+
+# Example entry:
+#
+# - id: dec-YYYY-MM-DD-001
+#   timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+#   actor: agent
+#   basis: derived_from_principles
+#   principles: [user-convenience, delivery-speed]
+#   decision: "Magic login link will open a session immediately for this low-risk forum flow."
+#   rationale: "The project prioritizes convenience and has no high-risk account actions in this flow."
+#   status: active
+#
+# Allowed actor values:
+# - user
+# - agent
+#
+# Allowed basis values:
+# - explicit_user_instruction
+# - derived_from_principles
+# - repo_pattern
+# - agent_judgment
+#
+# Allowed status values:
+# - active
+# - superseded
+
