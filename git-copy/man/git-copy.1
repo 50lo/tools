@@ -4,8 +4,10 @@ git-copy \- copy files or directories from another branch without switching
 .SH SYNOPSIS
 .B git copy
 .RI [ --force ]
-.IR path 
-.IR branch
+.RI [ --commit ]
+.IR branch 
+.IR source
+.RI [ destination ]
 .SH DESCRIPTION
 .B git-copy
 is a lightweight custom Git command for copying files or folders from another
@@ -17,11 +19,18 @@ The command validates that the source branch and path exist before copying.
 When the target already exists, it prompts before overwriting unless the
 .B --force
 flag is provided.
+Passing
+.B --commit
+stages and commits the copied path immediately with an auto-generated message.
 .SH OPTIONS
 .TP
 .B --force
 Skip the overwrite confirmation prompt when the destination path already
 exists.
+.TP
+.B --commit
+Automatically stage and commit the copied file or directory after it has been
+copied.
 .SH FEATURES
 .TP
 .B Works with files and folders
@@ -40,6 +49,11 @@ history.
 .TP
 .B No external dependencies
 Implemented entirely in POSIX shell so it works anywhere Git is available.
+.TP
+.B Optional auto-commit
+Use
+.B --commit
+to stage and commit the copied path in the same command.
 .SH HOW IT WORKS
 .IP \(bu 2
 For files it runs
@@ -51,24 +65,35 @@ For directories it streams
 for the requested branch and folder into a temporary directory and then
 synchronises it into your working tree.
 .P
-Your index stays untouched because nothing gets checked out or merged.
+Your index stays untouched because nothing gets checked out or merged unless
+you opt into the auto-commit workflow.
 .SH EXAMPLES
 .TP
 Copy a single file from another branch
 .EX
-$ git copy src/scripts/cleanup.sh feature/new-cleanup
+$ git copy feature/new-cleanup src/scripts/cleanup.sh
 .EE
 .TP
 Copy an entire directory
 .EX
-$ git copy src/utils feature/tooling-updates
+$ git copy feature/tooling-updates src/utils
+.EE
+.TP
+Copy and commit in one step
+.EX
+$ git copy --commit feature/new-cleanup src/scripts/cleanup.sh
 .EE
 .SH WORKFLOW EXAMPLE
 Grab a fix from another branch and commit it locally.
 .EX
-$ git copy src/scripts/cleanup.sh tasks/fix-cleanup-script
+$ git copy tasks/fix-cleanup-script src/scripts/cleanup.sh
 $ git add src/scripts/cleanup.sh
 $ git commit -m "Update cleanup script from fix-cleanup-script branch"
+.EE
+.P
+Or let the tool commit for you.
+.EX
+$ git copy --commit tasks/fix-cleanup-script src/scripts/cleanup.sh
 .EE
 .SH SEE ALSO
 .BR git (1),

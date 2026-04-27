@@ -26,10 +26,12 @@ git copy --help
 ## Usage
 
 ```bash
-git copy [--force] <branch> <source> [destination]
+git copy [--force] [--commit] <branch> <source> [destination]
 ```
 
 If `destination` is omitted, the file or folder is copied to the same path name in your current branch.
+Use `--force` to skip the overwrite prompt and `--commit` to automatically stage
+and commit the copied path with a generated message.
 
 **Examples:**
 
@@ -48,12 +50,18 @@ Copy and rename a file in one step:
 git copy feature/new-cleanup src/scripts/cleanup.sh scripts/cleanup.sh
 ```
 
+Copy and commit in one command:
+```bash
+git copy --commit feature/new-cleanup src/scripts/cleanup.sh
+```
+
 ---
 
 ## Features
 
 - Works with both files and folders
 - Confirms before overwriting existing files (use `--force` to skip the prompt)
+- Optional `--commit` flag automatically stages and commits the copied path
 - Uses `git archive` internally for folders (fast and clean)
 - Fully shell-based — no dependencies
 - Safe: validates branches and paths before copying
@@ -67,7 +75,7 @@ Internally, `git-copy` uses:
 - `git show <branch>:<path>` for files  
 - `git archive <branch> <folder>` for folders
 
-So your working tree is updated without checking out another branch or touching your index.
+So your working tree is updated without checking out another branch or touching your index (unless you opt into `--commit`).
 
 ---
 
@@ -79,6 +87,11 @@ Let’s say you fixed a script on another branch and want it in your current one
 git copy tasks/fix-cleanup-script src/scripts/cleanup.sh
 git add src/scripts/cleanup.sh
 git commit -m "Update cleanup script from fix-cleanup-script branch"
+```
+
+Or do it in one step with auto-commit:
+```bash
+git copy --commit tasks/fix-cleanup-script src/scripts/cleanup.sh
 ```
 
 ---
