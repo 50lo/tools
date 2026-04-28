@@ -14,9 +14,16 @@ try:
     if out_path is None:
         sys.exit(0)
 
-    print(f"\n[Curator] Diary template ready: {out_path}")
-    print("Fill in the diary entry to help Curator learn from this session.")
-    print("Pay special attention to the ## Failures section if anything went wrong.")
+    print(
+        json.dumps(
+            {
+                "systemMessage": (
+                    f"[Curator] Diary template ready: {out_path}\n"
+                    "Fill it in after significant work, especially the ## Failures section."
+                )
+            }
+        )
+    )
 
     sys.exit(0)
 

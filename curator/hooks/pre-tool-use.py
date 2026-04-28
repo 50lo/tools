@@ -20,13 +20,13 @@ try:
 
     for match in trauma_matches(command):
         if match["severity"] in ('critical', 'high'):
-            print(format_trauma_message(match, blocked=True))
-            sys.exit(1)
+            print(format_trauma_message(match, blocked=True), file=sys.stderr)
+            sys.exit(2)
         else:
             warnings.append(format_trauma_message(match, blocked=False))
 
     for w in warnings:
-        print(w)
+        print(w, file=sys.stderr)
 
     sys.exit(0)
 
