@@ -1,0 +1,27 @@
+[features]
+codex_hooks = true
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/pre-tool-use.py"
+timeout = 30
+statusMessage = "Checking Curator Trauma Guard"
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/user-prompt-submit.py"
+timeout = 30
+statusMessage = "Searching Curator playbook"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/stop.py"
+timeout = 30
+statusMessage = "Preparing Curator diary"

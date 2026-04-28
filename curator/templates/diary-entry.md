@@ -1,7 +1,7 @@
 ---
 date: YYYY-MM-DD
 project: project-name
-agent: claude-code
+agent: agent-name
 session_id: diary-YYYY-MM-DD-project-name
 processed: false
 ---

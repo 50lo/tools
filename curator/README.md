@@ -1,12 +1,12 @@
 # Curator — Markdown-first procedural memory for coding agents
 
-Curator is a personal, file-based memory system for coding agents. It gives Claude Code persistent knowledge across sessions: what patterns work, what to avoid, and what commands have caused harm in the past. All data lives in plain Markdown files with YAML frontmatter — no database, no server, no dependencies beyond Python and the Anthropic SDK.
+Curator is a personal, file-based memory system for coding agents. It gives tools like Claude Code and Codex CLI persistent knowledge across sessions: what patterns work, what to avoid, and what commands have caused harm in the past. All data lives in plain Markdown files with YAML frontmatter — no database, no server, no Python dependencies.
 
 Built around three ideas from cognitive science adapted for agents:
 
 - **Working memory (diary):** Structured session summaries written after each coding session.
 - **Procedural memory (playbook):** Distilled rules and anti-patterns with confidence scores that decay over time.
-- **Trauma Guard:** A blocklist of dangerous command patterns, extracted from documented failures and enforced by a Claude Code `PreToolUse` hook.
+- **Trauma Guard:** A blocklist of dangerous command patterns, extracted from documented failures and enforced by agent-specific tool hooks.
 
 
 ## Directory layout
@@ -14,7 +14,7 @@ Built around three ideas from cognitive science adapted for agents:
 ```
 curator/
   README.md                   # this file — read when you need a refresher
-  CLAUDE.md                   # snippet to include in project CLAUDE.md files
+  CLAUDE.md                   # legacy Claude snippet; see integrations/claude/
 
   playbook/                   # one .md file per rule or anti-pattern
   diary/                      # one .md file per coding session
@@ -34,8 +34,13 @@ curator/
     rule.md                   # blank rule template (for manual rule creation)
 
   hooks/
-    pre-tool-use.py           # Trauma Guard: blocks/warns on dangerous commands
-    stop.py                   # post-session: creates diary template if none written today
+    common.py                 # shared hook utilities
+    pre-tool-use.py           # Claude-compatible Trauma Guard entrypoint
+    stop.py                   # Claude-compatible diary template entrypoint
+
+  integrations/
+    claude/                   # Claude Code instructions, settings, hook wrappers
+    codex/                    # Codex AGENTS.md, config.toml, hook adapters
 ```
 
 
@@ -78,7 +83,7 @@ Notes from specific sessions where this rule proved correct or incorrect.
 ---
 date: 2026-04-23
 project: my-project
-agent: claude-code
+agent: codex-cli
 session_id: diary-2026-04-23-my-project
 processed: false        # set to true by reflect.py after extraction
 ---
@@ -140,12 +145,12 @@ Enforced automatically by `maintain.py`:
 
 ## Trauma Guard severity
 
-The `pre-tool-use.py` hook behavior depends on severity:
+The Trauma Guard behavior depends on severity:
 
 | Severity | Behavior |
 |---|---|
-| `critical` / `high` | Blocks the command. Claude sees the warning and cannot proceed. |
-| `medium` / `low` | Warns but allows. Claude sees the warning and can override with judgment. |
+| `critical` / `high` | Blocks the command when the active agent hook supports blocking. |
+| `medium` / `low` | Warns but allows. The agent sees the warning and can continue with judgment. |
 
 
 ## Workflows
@@ -158,11 +163,11 @@ Before starting any non-trivial task, run:
 python curator/scripts/search.py "your task description"
 ```
 
-Returns matching rules sorted by score. Read them before proceeding. Claude Code does this automatically if the `CLAUDE.md` snippet is in your project.
+Returns matching rules sorted by score. Read them before proceeding. Agent instructions can remind the agent to do this; the Codex integration can also inject search results automatically with a `UserPromptSubmit` hook.
 
 ### Session end — write diary
 
-After any session that's non-trivial (> ~30 min or involving real decisions), write a diary entry. Claude Code's stop hook creates a template automatically at `curator/diary/YYYY-MM-DD-project.md`. Fill it in — or ask Claude to fill it in at the start of the next session using `transcript_path` from the hook.
+After any session that's non-trivial (> ~30 min or involving real decisions), write a diary entry. Agent stop hooks can create a template automatically at `curator/diary/YYYY-MM-DD-project.md`. Fill it in — or ask the agent to fill it in at the start of the next session using the prior transcript when available.
 
 The `## Failures` section is the most important part. If any command caused data loss, required a rollback, broke something, or wasted significant time — document the exact command, what broke, and how it was recovered. This is the primary sensor for trauma pattern extraction.
 
@@ -174,12 +179,27 @@ Run after accumulating a few diary entries (weekly or on demand):
 python curator/scripts/reflect.py
 ```
 
-Reads all diary entries with `processed: false`, calls the Claude API, and outputs:
+Reads all diary entries with `processed: false`, asks a local agent CLI to extract structured JSON, and outputs:
 - Rule candidates written to `playbook/` with `maturity: candidate`
 - Trauma candidates appended to `traumas/pending.md`
 - Processed diary entries marked `processed: true`
 
-**Requires** `ANTHROPIC_API_KEY` in your environment.
+By default, Curator auto-detects an installed local agent CLI, preferring Claude Code and then Codex CLI:
+
+```bash
+python curator/scripts/reflect.py
+```
+
+Choose an agent explicitly when needed:
+
+```bash
+python curator/scripts/reflect.py --agent claude
+python curator/scripts/reflect.py --agent codex
+```
+
+Use `--model` to pass a model override through to the selected agent CLI.
+
+Reflection does not let the agent edit Curator files directly. The agent only returns JSON; `reflect.py` validates and writes `playbook/`, `traumas/pending.md`, and diary frontmatter itself.
 
 ### Review pending traumas (manual)
 
@@ -227,9 +247,13 @@ Edit rule text to be more specific or actionable. Mark helpful/harmful as you us
 When starting fresh, don't wait for the system to discover patterns you already know. Manually create a few rules in `playbook/` using `templates/rule.md`. Set `maturity: established` or `proven` for things you're confident about. Set `helpful_count` to reflect your experience level.
 
 
-## Claude Code integration
+## Agent integrations
 
-### 1. Install hooks
+Curator keeps one shared memory core and separate agent adapters. The core data model and scripts are shared across agents; each integration owns only its instructions, config snippets, and hook I/O contract.
+
+### Claude Code
+
+#### 1. Install hooks
 
 Add to your project's `.claude/settings.json` (or global `~/.claude/settings.json`):
 
@@ -242,7 +266,7 @@ Add to your project's `.claude/settings.json` (or global `~/.claude/settings.jso
         "hooks": [
           {
             "type": "command",
-            "command": "python /absolute/path/to/curator/hooks/pre-tool-use.py"
+            "command": "python /absolute/path/to/curator/integrations/claude/hooks/pre-tool-use.py"
           }
         ]
       }
@@ -252,7 +276,7 @@ Add to your project's `.claude/settings.json` (or global `~/.claude/settings.jso
         "hooks": [
           {
             "type": "command",
-            "command": "python /absolute/path/to/curator/hooks/stop.py"
+            "command": "python /absolute/path/to/curator/integrations/claude/hooks/stop.py"
           }
         ]
       }
@@ -263,9 +287,61 @@ Add to your project's `.claude/settings.json` (or global `~/.claude/settings.jso
 
 Use absolute paths — hooks run from varying working directories.
 
-### 2. Include CLAUDE.md in your project
+You can also start from `integrations/claude/settings.example.json`.
 
-Copy the contents of `curator/CLAUDE.md` into your project's `CLAUDE.md` (or the global `~/.claude/CLAUDE.md`). Update the path to match where `curator/` lives relative to your project root.
+#### 2. Include CLAUDE.md in your project
+
+Copy the contents of `curator/integrations/claude/CLAUDE.md` into your project's `CLAUDE.md` (or the global `~/.claude/CLAUDE.md`). Update the path to match where `curator/` lives relative to your project root.
+
+The top-level `CLAUDE.md` and `hooks/pre-tool-use.py` / `hooks/stop.py` remain as compatibility entrypoints for existing installs.
+
+### Codex CLI
+
+#### 1. Enable hooks
+
+Codex hooks require the feature flag in `~/.codex/config.toml` or a trusted project `.codex/config.toml`:
+
+```toml
+[features]
+codex_hooks = true
+```
+
+Then add the Curator hooks:
+
+```toml
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/pre-tool-use.py"
+timeout = 30
+statusMessage = "Checking Curator Trauma Guard"
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/user-prompt-submit.py"
+timeout = 30
+statusMessage = "Searching Curator playbook"
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "python /absolute/path/to/curator/integrations/codex/hooks/stop.py"
+timeout = 30
+statusMessage = "Preparing Curator diary"
+```
+
+You can also start from `integrations/codex/config.example.toml`.
+
+Codex `PreToolUse` is a guardrail, not a complete enforcement boundary. It can intercept supported Bash calls, `apply_patch`, and MCP tool calls, but it may not intercept every shell execution path. Use Codex rules, sandboxing, and approval settings for additional enforcement around high-risk commands.
+
+#### 2. Include AGENTS.md guidance
+
+Copy the contents of `curator/integrations/codex/AGENTS.md` into your repo `AGENTS.md`, a nested `AGENTS.md`, or global `~/.codex/AGENTS.md`. Update paths to match where `curator/` lives relative to your project.
 
 
 ## Manual workflows (cannot be automated)
@@ -310,8 +386,8 @@ For most playbooks under a few hundred rules, `search.py` is sufficient and has 
 
 ## Dependencies
 
-```bash
-pip install anthropic   # for reflect.py only — all other scripts use stdlib
-```
+Python 3.8+ required. Curator scripts use only the Python standard library.
 
-Python 3.8+ required (uses `pathlib`, `datetime.date.fromisoformat`).
+Reflection requires at least one authenticated local agent CLI:
+- Claude Code: `claude`
+- Codex CLI: `codex`

@@ -1,18 +1,24 @@
 """
-reflect.py — Process unprocessed diary entries through Claude API for rule/trauma extraction.
+reflect.py — Process unprocessed diary entries through a local agent CLI.
 
-Usage: python reflect.py
+Usage:
+  python reflect.py
+  python reflect.py --agent claude
+  python reflect.py --agent codex
 
-Reads unprocessed diary entries from curator/diary/, calls Claude to extract
+Reads unprocessed diary entries from curator/diary/, calls a local agent CLI to extract
 rule candidates and trauma patterns, writes rules to curator/playbook/,
 appends trauma candidates to curator/traumas/pending.md, and marks diary
 entries as processed.
 """
 
+import argparse
 import json
 import os
+import shutil
 import sys
 import secrets
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -185,7 +191,7 @@ def build_entries_text(unprocessed):
 
 
 def build_user_message(entries_text):
-    """Build the user message for the Claude API call."""
+    """Build the user message for the agent CLI call."""
     return f"""Analyze the following coding session diary entries and extract rules and trauma patterns.
 
 {entries_text}
@@ -227,19 +233,185 @@ Extraction rules:
 
 
 # ---------------------------------------------------------------------------
+# Agent CLI providers
+# ---------------------------------------------------------------------------
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rules": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "debugging",
+                            "testing",
+                            "architecture",
+                            "workflow",
+                            "documentation",
+                            "integration",
+                            "git",
+                            "security",
+                            "performance",
+                            "general",
+                        ],
+                    },
+                    "type": {"type": "string", "enum": ["rule", "anti-pattern"]},
+                    "text": {"type": "string"},
+                    "context": {"type": "string"},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["title", "category", "type", "text", "context", "tags", "evidence"],
+                "additionalProperties": False,
+            },
+        },
+        "traumas": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                    "pattern": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "recovery": {"type": "string"},
+                },
+                "required": ["title", "severity", "pattern", "rationale", "recovery"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["rules", "traumas"],
+    "additionalProperties": False,
+}
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Extract Curator rules and trauma candidates.")
+    parser.add_argument(
+        "--agent",
+        choices=("auto", "claude", "codex"),
+        default=os.environ.get("CURATOR_REFLECT_AGENT", "auto"),
+        help="Local agent CLI to use. Defaults to CURATOR_REFLECT_AGENT or auto.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Optional model argument passed through to the selected agent CLI.",
+    )
+    return parser.parse_args()
+
+
+def select_agent(agent):
+    if agent != "auto":
+        if not shutil.which(agent):
+            raise RuntimeError(f"{agent!r} command not found on PATH")
+        return agent
+
+    for candidate in ("claude", "codex"):
+        if shutil.which(candidate):
+            return candidate
+    raise RuntimeError("No supported agent CLI found. Install Claude Code or Codex CLI.")
+
+
+def schema_path():
+    path = CURATOR_DIR / ".cache" / "reflection-schema.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(OUTPUT_SCHEMA, indent=2))
+    return path
+
+
+def run_agent(command, prompt, timeout=300):
+    result = subprocess.run(
+        command,
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        cwd=str(CURATOR_DIR),
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        detail = f": {stderr}" if stderr else ""
+        raise RuntimeError(f"{command[0]} exited with status {result.returncode}{detail}")
+    return result.stdout
+
+
+def call_claude_cli(system_prompt, user_message, model):
+    command = [
+        "claude",
+        "-p",
+        "--no-session-persistence",
+        "--max-turns",
+        "1",
+        "--permission-mode",
+        "plan",
+        "--tools",
+        "",
+        "--output-format",
+        "json",
+        "--json-schema",
+        json.dumps(OUTPUT_SCHEMA),
+        "--append-system-prompt",
+        system_prompt,
+    ]
+    if model:
+        command.extend(["--model", model])
+    command.append(user_message)
+
+    stdout = run_agent(command, prompt="")
+    envelope = json.loads(stdout)
+    if isinstance(envelope, dict):
+        for key in ("result", "content", "text", "response"):
+            value = envelope.get(key)
+            if isinstance(value, str):
+                return value
+        if "rules" in envelope and "traumas" in envelope:
+            return json.dumps(envelope)
+    return stdout
+
+
+def call_codex_cli(system_prompt, user_message, model):
+    command = [
+        "codex",
+        "exec",
+        "--ephemeral",
+        "--output-schema",
+        str(schema_path()),
+        "--skip-git-repo-check",
+    ]
+    if model:
+        command.extend(["--model", model])
+    command.append(system_prompt + "\n\n" + user_message)
+
+    return run_agent(command, prompt="")
+
+
+def call_agent(agent, system_prompt, user_message, model):
+    selected = select_agent(agent)
+    if selected == "claude":
+        return call_claude_cli(system_prompt, user_message, model)
+    if selected == "codex":
+        return call_codex_cli(system_prompt, user_message, model)
+    raise ValueError(f"Unsupported agent: {selected}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     try:
-        # 1. Check ANTHROPIC_API_KEY
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            print("Error: ANTHROPIC_API_KEY environment variable not set.", file=sys.stderr)
-            print("Set it with: export ANTHROPIC_API_KEY=your-key-here", file=sys.stderr)
-            sys.exit(1)
+        args = parse_args()
 
-        # 2. Find unprocessed diary entries
+        # 1. Find unprocessed diary entries
         unprocessed = []
         for path in sorted(DIARY_DIR.glob('*.md')):
             fm, body = parse_frontmatter(path)
@@ -254,27 +426,13 @@ def main():
 
         # 3. Build prompt
         entries_text = build_entries_text(unprocessed)
+        user_message = build_user_message(entries_text)
 
-        # 4. Call Claude API
+        # 4. Call local agent CLI
         try:
-            import anthropic
-        except ImportError:
-            print("Error: anthropic package not installed.", file=sys.stderr)
-            print("Install it with: pip install anthropic", file=sys.stderr)
-            sys.exit(1)
-
-        client = anthropic.Anthropic(api_key=api_key)
-
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": build_user_message(entries_text)}]
-            )
-            raw_response = response.content[0].text
+            raw_response = call_agent(args.agent, SYSTEM_PROMPT, user_message, args.model)
         except Exception as e:
-            print(f"Error calling Claude API: {e}", file=sys.stderr)
+            print(f"Error running {args.agent} agent: {e}", file=sys.stderr)
             print("Diary entries have NOT been marked as processed.", file=sys.stderr)
             sys.exit(1)
 
