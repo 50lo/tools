@@ -12,22 +12,7 @@ except ImportError:  # pragma: no cover - depends on the user's environment.
 
 
 ALLOWED_ACTORS = ("user", "agent")
-ALLOWED_BASIS = (
-    "explicit_user_instruction",
-    "derived_from_principles",
-    "repo_pattern",
-    "agent_judgment",
-)
 ALLOWED_STATUSES = ("active", "superseded")
-ALLOWED_PRECEDENCE = (
-    "explicit_user_instruction",
-    "current_prd_or_issue",
-    "agent_principles",
-    "decisions_log_precedents",
-    "existing_repo_conventions",
-    "agent_judgment",
-    "agent_judgement",
-)
 
 
 def present_string(value: Any) -> bool:
@@ -49,6 +34,18 @@ def valid_slug(value: Any) -> bool:
     )
 
 
+def validate_iso8601(value: Any) -> bool:
+    if not present_string(value):
+        return False
+
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+
+    return True
+
+
 def load_yaml(path: Path, errors: List[str]) -> Optional[Any]:
     if not path.is_file():
         errors.append(f"Missing required file: {path}")
@@ -68,124 +65,133 @@ def load_yaml(path: Path, errors: List[str]) -> Optional[Any]:
         return None
 
 
-def validate_principles(
-    data: Any, errors: List[str], warnings: List[str]
-) -> None:
+def validate_agent_rules(data: Any, errors: List[str], warnings: List[str]) -> None:
     if not isinstance(data, dict):
-        errors.append("agent_principles.yml must be a mapping/object")
+        errors.append("agent_rules.yml must be a mapping/object")
         return
 
-    if "version" not in data:
-        errors.append("agent_principles.yml: version is required")
-    if not present_string(data.get("updated")):
-        errors.append("agent_principles.yml: updated must be a non-empty string")
+    if not validate_iso8601(data.get("updated")):
+        errors.append("agent_rules.yml: updated must be an ISO-8601 timestamp string")
 
-    priorities = data.get("priorities")
-    if not isinstance(priorities, list) or not priorities:
-        errors.append("agent_principles.yml: priorities must be a non-empty array")
+    if not present_string(data.get("purpose")):
+        errors.append("agent_rules.yml: purpose must be a non-empty string")
+
+    required_workflow = data.get("required_workflow")
+    if not isinstance(required_workflow, list) or not required_workflow:
+        errors.append("agent_rules.yml: required_workflow must be a non-empty array")
+    elif not string_array(required_workflow):
+        errors.append(
+            "agent_rules.yml: required_workflow must be an array of non-empty strings"
+        )
+
+    precedence = data.get("precedence")
+    if not isinstance(precedence, list) or not precedence:
+        errors.append("agent_rules.yml: precedence must be a non-empty array")
+    elif not string_array(precedence):
+        errors.append("agent_rules.yml: precedence must be an array of non-empty strings")
+
+    rules = data.get("rules")
+    if not isinstance(rules, list) or not rules:
+        errors.append("agent_rules.yml: rules must be a non-empty array")
         return
 
-    ids: Set[Any] = set()
-    ranks: Set[Any] = set()
+    priorities: Set[int] = set()
+    ids: Set[str] = set()
 
-    for index, priority in enumerate(priorities):
-        prefix = f"agent_principles.yml: priorities[{index}]"
+    for index, rule in enumerate(rules):
+        prefix = f"agent_rules.yml: rules[{index}]"
 
-        if not isinstance(priority, dict):
+        if not isinstance(rule, dict):
             errors.append(f"{prefix} must be a mapping/object")
             continue
 
-        priority_id = priority.get("id")
-        rank = priority.get("rank")
+        priority = rule.get("priority")
+        if not isinstance(priority, int) or isinstance(priority, bool) or priority <= 0:
+            errors.append(f"{prefix}.priority must be a positive integer")
+        elif priority in priorities:
+            errors.append(f"{prefix}.priority duplicates {priority!r}")
+        else:
+            priorities.add(priority)
 
-        if not valid_slug(priority_id):
+        rule_id = rule.get("id")
+        if not valid_slug(rule_id):
             errors.append(f"{prefix}.id must be a lowercase kebab-case string")
-        if priority_id in ids:
-            errors.append(f"{prefix}.id duplicates {priority_id!r}")
-        elif priority_id is not None:
-            ids.add(priority_id)
+        elif rule_id in ids:
+            errors.append(f"{prefix}.id duplicates {rule_id!r}")
+        else:
+            ids.add(rule_id)
 
-        if not isinstance(rank, int) or isinstance(rank, bool) or rank <= 0:
-            errors.append(f"{prefix}.rank must be a positive integer")
-        if rank in ranks:
-            errors.append(f"{prefix}.rank duplicates {rank!r}")
-        elif rank is not None:
-            ranks.add(rank)
+        applies_to = rule.get("applies_to")
+        if not isinstance(applies_to, list) or not applies_to:
+            errors.append(f"{prefix}.applies_to must be a non-empty array")
+        elif not string_array(applies_to):
+            errors.append(f"{prefix}.applies_to must be an array of non-empty strings")
 
-        if not present_string(priority.get("statement")):
-            errors.append(f"{prefix}.statement must be a non-empty string")
+        if not present_string(rule.get("rule")):
+            errors.append(f"{prefix}.rule must be a non-empty string")
 
-        if "prefer" in priority and not string_array(priority.get("prefer")):
+        prefer = rule.get("prefer")
+        if not isinstance(prefer, list) or not prefer:
+            errors.append(f"{prefix}.prefer must be a non-empty array")
+        elif not string_array(prefer):
             errors.append(f"{prefix}.prefer must be an array of non-empty strings")
 
-        if "ask_user_when" in priority:
-            warnings.append(
-                f"{prefix}.ask_user_when is deprecated; use top-level "
-                "autonomy.ask_user_only_when only for project-wide fallback boundaries"
-            )
-            if not string_array(priority.get("ask_user_when")):
-                errors.append(
-                    f"{prefix}.ask_user_when must be an array of non-empty strings"
-                )
+    quick_lookup = data.get("quick_lookup")
+    if quick_lookup is None:
+        return
 
-    precedence = data.get("precedence")
-    if precedence:
-        if not string_array(precedence):
+    if not isinstance(quick_lookup, dict):
+        errors.append("agent_rules.yml: quick_lookup must be a mapping/object")
+        return
+
+    if "log_focus" in quick_lookup:
+        log_focus = quick_lookup.get("log_focus")
+        if not isinstance(log_focus, list) or not log_focus:
+            errors.append("agent_rules.yml: quick_lookup.log_focus must be a non-empty array")
+        elif not string_array(log_focus):
             errors.append(
-                "agent_principles.yml: precedence must be an array of non-empty strings"
+                "agent_rules.yml: quick_lookup.log_focus must be an array of non-empty strings"
             )
-        else:
-            unknown = [
-                value for value in precedence if value not in ALLOWED_PRECEDENCE
-            ]
-            if unknown:
-                warnings.append(
-                    "agent_principles.yml: unknown precedence values: "
-                    + ", ".join(unknown)
-                )
 
-    autonomy = data.get("autonomy")
-    if not autonomy:
+    if "optional_yq_examples" in quick_lookup:
+        examples = quick_lookup.get("optional_yq_examples")
+        if not isinstance(examples, list) or not examples:
+            errors.append(
+                "agent_rules.yml: quick_lookup.optional_yq_examples must be a non-empty array"
+            )
+        elif not string_array(examples):
+            errors.append(
+                "agent_rules.yml: quick_lookup.optional_yq_examples must be an array of non-empty strings"
+            )
+
+    known = {"updated", "purpose", "required_workflow", "precedence", "rules", "quick_lookup"}
+    unknown = [str(key) for key in data if str(key) not in known]
+    if unknown:
+        warnings.append(f"agent_rules.yml has unknown fields: {', '.join(unknown)}")
+
+
+def validate_decisions_log(data: Any, errors: List[str], warnings: List[str]) -> None:
+    if not isinstance(data, dict):
+        errors.append("decisions_log.yml must be a mapping/object")
         return
 
-    if not isinstance(autonomy, dict):
-        errors.append("agent_principles.yml: autonomy must be a mapping/object")
-        return
+    if not validate_iso8601(data.get("updated")):
+        errors.append("decisions_log.yml: updated must be an ISO-8601 timestamp string")
 
-    if "default" in autonomy and not present_string(autonomy.get("default")):
-        errors.append(
-            "agent_principles.yml: autonomy.default must be a non-empty string"
-        )
+    usage = data.get("usage")
+    if not isinstance(usage, list) or not usage:
+        errors.append("decisions_log.yml: usage must be a non-empty array")
+    elif not string_array(usage):
+        errors.append("decisions_log.yml: usage must be an array of non-empty strings")
 
-    if "ask_user_only_when" in autonomy and not string_array(
-        autonomy.get("ask_user_only_when")
-    ):
-        errors.append(
-            "agent_principles.yml: autonomy.ask_user_only_when must be an array of "
-            "non-empty strings"
-        )
-
-
-def validate_iso8601(value: Any) -> bool:
-    if not present_string(value):
-        return False
-
-    try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-
-    return True
-
-
-def validate_decisions(data: Any, errors: List[str], warnings: List[str]) -> None:
-    if not isinstance(data, list):
-        errors.append("decisions_log.yml must be an array; use [] for an empty log")
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        errors.append("decisions_log.yml: entries must be an array")
         return
 
     ids: Set[str] = set()
 
-    for index, entry in enumerate(data):
+    for index, entry in enumerate(entries):
         prefix = f"decisions_log.yml: entries[{index}]"
 
         if not isinstance(entry, dict):
@@ -209,11 +215,17 @@ def validate_decisions(data: Any, errors: List[str], warnings: List[str]) -> Non
                 f"{prefix}.actor must be one of: {', '.join(ALLOWED_ACTORS)}"
             )
 
-        basis = entry.get("basis")
-        if basis not in ALLOWED_BASIS:
-            errors.append(
-                f"{prefix}.basis must be one of: {', '.join(ALLOWED_BASIS)}"
-            )
+        if not present_string(entry.get("source")):
+            errors.append(f"{prefix}.source must be a non-empty string")
+
+        if not present_string(entry.get("scope")):
+            errors.append(f"{prefix}.scope must be a non-empty string")
+
+        if not present_string(entry.get("summary")):
+            errors.append(f"{prefix}.summary must be a non-empty string")
+
+        if not present_string(entry.get("rationale")):
+            errors.append(f"{prefix}.rationale must be a non-empty string")
 
         status = entry.get("status")
         if status not in ALLOWED_STATUSES:
@@ -221,36 +233,22 @@ def validate_decisions(data: Any, errors: List[str], warnings: List[str]) -> Non
                 f"{prefix}.status must be one of: {', '.join(ALLOWED_STATUSES)}"
             )
 
-        if not present_string(entry.get("decision")):
-            errors.append(f"{prefix}.decision must be a non-empty string")
-        if not present_string(entry.get("rationale")):
-            errors.append(f"{prefix}.rationale must be a non-empty string")
-
-        if "principles" in entry and not string_array(entry.get("principles")):
-            errors.append(f"{prefix}.principles must be an array of non-empty strings")
-
-        known = {
-            "id",
-            "timestamp",
-            "actor",
-            "basis",
-            "principles",
-            "decision",
-            "rationale",
-            "status",
-            "supersedes",
-            "superseded_by",
-        }
+        known = {"id", "timestamp", "actor", "source", "scope", "summary", "rationale", "status"}
         unknown = [str(key) for key in entry if str(key) not in known]
         if unknown:
             warnings.append(f"{prefix} has unknown fields: {', '.join(unknown)}")
+
+    known = {"updated", "usage", "entries"}
+    unknown = [str(key) for key in data if str(key) not in known]
+    if unknown:
+        warnings.append(f"decisions_log.yml has unknown fields: {', '.join(unknown)}")
 
 
 def usage(program_name: str) -> None:
     print(f"Usage: {program_name} [PROJECT_DIR]", file=sys.stderr)
     print(file=sys.stderr)
     print(
-        "Validates PROJECT_DIR/agent_principles.yml and PROJECT_DIR/decisions_log.yml.",
+        "Validates PROJECT_DIR/agent_rules.yml and PROJECT_DIR/decisions_log.yml.",
         file=sys.stderr,
     )
     print("PROJECT_DIR defaults to the current directory.", file=sys.stderr)
@@ -262,19 +260,19 @@ def main(argv: List[str]) -> int:
         return 1 if len(argv) > 1 else 0
 
     project_dir = Path(argv[0] if argv else ".").expanduser().resolve()
-    principles_path = project_dir / "agent_principles.yml"
+    rules_path = project_dir / "agent_rules.yml"
     decisions_path = project_dir / "decisions_log.yml"
 
     errors: List[str] = []
     warnings: List[str] = []
 
-    principles = load_yaml(principles_path, errors)
+    rules = load_yaml(rules_path, errors)
     decisions = load_yaml(decisions_path, errors)
 
-    if principles is not None:
-        validate_principles(principles, errors, warnings)
+    if rules is not None:
+        validate_agent_rules(rules, errors, warnings)
     if decisions is not None:
-        validate_decisions(decisions, errors, warnings)
+        validate_decisions_log(decisions, errors, warnings)
 
     for warning in warnings:
         print(f"WARN: {warning}", file=sys.stderr)

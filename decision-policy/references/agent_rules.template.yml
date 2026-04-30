@@ -1,0 +1,40 @@
+updated: "2026-04-30T08:10:00Z"
+purpose: "Rules agents must use to resolve underspecified product, process, and technical choices."
+
+required_workflow:
+  - "At task start, list open questions or say there are none."
+  - "Read this file before making a non-obvious choice."
+  - "Apply the first rule that clearly fits. Higher-priority rules win."
+  - "If no rule fits, scan only relevant entries in decisions_log.yml."
+  - "Before finishing, reflect: did I make a material decision another agent may revisit? If yes, log it."
+
+precedence:
+  - explicit_user_instruction
+  - current_issue_prd_or_tests
+  - agent_rules
+  - decisions_log_precedents
+  - existing_repo_conventions
+  - agent_judgment
+
+rules:
+  # Rule example. Replace it with rules relevant for your project.
+  - priority: 1
+    id: operator-clarity
+    applies_to:
+      - "user-facing workflow"
+      - "status reporting"
+      - "prompts and confirmations"
+    rule: "Prefer workflows that make the current state, next action, and consequences obvious to the operator."
+    prefer:
+      - "plain wording over clever wording"
+      - "visible progress and failure reasons"
+      - "explicit confirmation for destructive or surprising actions"
+      - "defaults that reduce ambiguity during resume/retry flows"
+
+quick_lookup:
+  log_focus:
+    - "Read only entries relevant to the current product, process, or technical question."
+    - "Prefer active entries. Use superseded entries only for historical context."
+  optional_yq_examples:
+    - "yq '.rules[] | {priority, id, rule}' agent_rules.yml"
+    - "yq '.entries[] | select(.status == \"active\" and .scope == \"process\")' decisions_log.yml"

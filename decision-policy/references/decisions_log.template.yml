@@ -1,32 +1,17 @@
-# Append-only material decision log.
-# Log tradeoffs, assumptions, user-visible behavior, architecture choices,
-# and choices future agents may otherwise re-litigate.
-# Do not log every tiny implementation detail.
+updated: "2026-04-30T08:10:00Z"
 
-[]
+usage:
+  - "Append only. Do not rewrite history except to mark status as superseded."
+  - "Log material product, process, or technical decisions."
+  - "Do not log tiny implementation details or obvious repo-pattern reuse."
 
-# Example entry:
-#
-# - id: dec-YYYY-MM-DD-001
-#   timestamp: "YYYY-MM-DDTHH:MM:SSZ"
-#   actor: agent
-#   basis: derived_from_principles
-#   principles: [user-convenience, delivery-speed]
-#   decision: "Magic login link will open a session immediately for this low-risk forum flow."
-#   rationale: "The project prioritizes convenience and has no high-risk account actions in this flow."
-#   status: active
-#
-# Allowed actor values:
-# - user
-# - agent
-#
-# Allowed basis values:
-# - explicit_user_instruction
-# - derived_from_principles
-# - repo_pattern
-# - agent_judgment
-#
-# Allowed status values:
-# - active
-# - superseded
-
+entries:
+  # Example of decision made basing on user instructions given during interactive coding session
+  - id: dec-2026-04-30-002
+    timestamp: "2026-04-30T06:58:00Z"
+    actor: user
+    source: explicit_user_instruction
+    scope: process
+    summary: "Move tasks/bugs/epics/etc to in-progress before work starts and to completed after review."
+    rationale: "This keeps the board truthful throughout execution and prevents agents from closing work prematurely."
+    status: active
