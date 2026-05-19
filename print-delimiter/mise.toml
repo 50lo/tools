@@ -1,0 +1,8 @@
+[tools]
+go = "1.26.2"
+
+[tasks.build]
+description = "Build the delimiter binary"
+run = "go build -o delimiter ."
+sources = ["*.go"]
+outputs = ["delimiter"]
