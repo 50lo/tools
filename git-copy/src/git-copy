@@ -90,7 +90,9 @@ if [[ "$IS_DIR" == true ]]; then
   rm -rf "$tmpdir"
 else
   echo "Copying file '$SOURCE_PATH' from '$SOURCE_BRANCH' to '$DESTINATION_PATH'..."
-  git show "${SOURCE_BRANCH}:${SOURCE_PATH}" > "${DESTINATION_PATH}"
+  # "branch:./path" resolves relative to the current directory, like the
+  # ls-tree/archive calls above; "branch:path" would be relative to repo root.
+  git show "${SOURCE_BRANCH}:./${SOURCE_PATH}" > "${DESTINATION_PATH}"
 fi
 
 echo "Copied successfully from '$SOURCE_BRANCH'."
