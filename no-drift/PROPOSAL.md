@@ -41,12 +41,12 @@ no-drift refs src/client.py
 no-drift status
 
 # After reviewing and, if necessary, editing the documentation:
-no-drift link docs/auth.md --doc-is-still-accurate
+no-drift link docs/auth.md -a
 
 no-drift unlink docs/auth.md src/auth.go
 ```
 
-- `link DOC TARGET`: create or refresh one binding. Doc and target must exist and be regular files. Initially restrict docs to `.md` files. New bindings need no acknowledgement. A changed existing target requires `--doc-is-still-accurate`; unchanged bindings are a no-op. No interactive prompt in version one.
+- `link DOC TARGET`: create or refresh one binding. Doc and target must exist and be regular files. Initially restrict docs to `.md` files. New bindings need no acknowledgement. A changed existing target requires `--ack` (short form `-a`), meaning “I reviewed the documentation and acknowledge this refresh”; unchanged bindings are a no-op. No interactive prompt in version one.
 - `link DOC`: refresh every existing binding for that doc. Resolve and validate all targets first; if any target fails or any stale binding lacks acknowledgement, leave the entire lockfile unchanged. No implicit discovery of references in prose.
 - `check` / `lint`: report fresh and stale bindings grouped by doc, with actionable reasons. Missing/unreadable docs also fail. Never write the lockfile. With no lockfile or no bindings, print “no bindings checked” and exit 0; this explicitly provides no coverage.
 - `status`: list recorded bindings without recomputing freshness.
@@ -130,7 +130,7 @@ no-drift/
 
 Aim for one straightforward script of roughly 400–600 lines plus behavioral tests, not a plugin architecture. This is a planning estimate; don't sacrifice clarity to a line limit. Use `argparse`, `pathlib`, `json`, `hashlib`, `ast`, `tempfile` and `os`. No packaging is needed for direct execution. A short README should explain the workflow to humans and coding agents; no installed skill is required.
 
-Acceptance tests should demonstrate: fresh after linking; stale on an uncommitted target change; Python formatting/comments stay fresh; docstrings/code/decorators change fingerprints; another method does not stale a method anchor; missing/ambiguous symbols and invalid Python fail; missing docs/targets fail; stale relink requires explicit review even after doc edits; blanket refresh failure leaves lockfile bytes unchanged; duplicate/malformed state is rejected; subdirectory invocation and paths with spaces work; `unlink` works after deletion; file `refs` includes symbol bindings; changed-path filtering doesn't match unrelated prefixes; unknown parser versions/modes fail clearly; an empty check reports no coverage.
+Acceptance tests should demonstrate: fresh after linking; stale on an uncommitted target change; Python formatting/comments stay fresh; docstrings/code/decorators change fingerprints; another method does not stale a method anchor; missing/ambiguous symbols and invalid Python fail; missing docs/targets fail; stale relink requires explicit review even after doc edits; `--ack` and `-a` both acknowledge targeted and blanket refreshes; blanket refresh failure leaves lockfile bytes unchanged; duplicate/malformed state is rejected; subdirectory invocation and paths with spaces work; `unlink` works after deletion; file `refs` includes symbol bindings; changed-path filtering doesn't match unrelated prefixes; unknown parser versions/modes fail clearly; an empty check reports no coverage.
 
 Run with `mise exec python@3.12.8 -- python -m unittest discover -s no-drift/tests`. Exercise the CLI in isolated temporary directories without modifying real repos. After implementation, manually run the documented link/change/check/review workflow on macOS and Linux. No external services or compiler are needed.
 
