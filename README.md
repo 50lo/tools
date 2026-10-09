@@ -1,1 +1,3 @@
-This repository contains a collection of small tools, each tool located in a separate directory. Each directory with a tool contains a README file that explains what it does, how it works, and general overview of code structure. 
+This repository contains a collection of small tools, each tool located in a separate directory. Each directory with a tool contains a README file that explains what it does, how it works, and general overview of code structure.
+
+- [no-drift](no-drift/README.md): bind documentation to code and check for changes.
