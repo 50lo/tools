@@ -317,5 +317,170 @@ class CLITests(unittest.TestCase):
         self.assertEqual(list(self.root.glob(".no-drift.lock.*")), [])
 
 
+    def test_whole_markdown_bindings_remain_byte_based(self):
+        source = "## Auth\nRules.\n## Other\nDetails.\n"
+        self.put("docs/guide.md", source)
+        self.link("docs/guide.md")
+        self.link("docs/guide.md#Auth")
+        self.assertEqual(self.state()["bindings"][0]["mode"], TOOL.BYTES_MODE)
+        self.put("docs/guide.md", source.replace("Details.", "Changed details."))
+        report = self.run_cli("check", code=1).stdout
+        self.assertIn("STALE docs/guide.md (", report)
+        self.assertIn("ok    docs/guide.md#auth", report)
+
+    def test_markdown_section_tracks_subsections_but_not_neighbors(self):
+        source = ('# Guide\nIntro.\n## Token Validation\nRules.\n'
+                  '### Errors\nDetails.\n## Other\nUnrelated.\n')
+        self.put("docs/guide.md", source)
+        self.link("docs/guide.md#Token Validation")
+        binding = self.state()["bindings"][0]
+        self.assertEqual(binding["target"], "docs/guide.md#token-validation")
+        self.assertEqual(binding["mode"], TOOL.HEADING_MODE)
+        self.put("docs/guide.md", source.replace("Intro.", "New intro.").replace("Unrelated.", "New neighbor."))
+        self.run_cli("check")
+        self.put("docs/guide.md", source.replace("Details.", "Changed subsection."))
+        self.run_cli("check", code=1)
+        before = self.lock_bytes()
+        self.run_cli("link", "docs/auth.md", "docs/guide.md#token-validation", code=2)
+        self.assertEqual(self.lock_bytes(), before)
+        self.run_cli("link", "docs/auth.md", "docs/guide.md#token-validation", "-a")
+        self.run_cli("check")
+        self.assertEqual(self.run_cli("refs", "docs/guide.md#Token Validation").stdout, "docs/auth.md\n")
+        (self.root / "docs/guide.md").unlink()
+        self.run_cli("unlink", "docs/auth.md", "docs/guide.md#Token Validation")
+
+    def test_markdown_heading_ambiguity_and_missing_heading_do_not_write(self):
+        self.put("docs/guide.md", "# Guide\n## Auth\nBody.\n")
+        self.link("docs/guide.md#Auth")
+        before = self.lock_bytes()
+        for text, reason in [("# Guide\n", "heading not found"),
+                             ("## Auth\nOne.\n### AUTH\nTwo.\n", "ambiguous heading")]:
+            with self.subTest(reason=reason):
+                self.put("docs/guide.md", text)
+                self.assertIn(reason, self.run_cli("check", code=1).stdout)
+                self.assertIn(reason, self.run_cli("link", "docs/auth.md", "-a", code=2).stderr)
+                self.assertEqual(self.lock_bytes(), before)
+        # Different titles with the same normalized fragment are ambiguous too.
+        self.put("docs/guide.md", "## Token Validation\nOne.\n## Token-validation\nTwo.\n")
+        self.run_cli("link", "docs/auth.md", "docs/guide.md#token-validation", code=2)
+        self.assertEqual(self.lock_bytes(), before)
+
+    def test_markdown_fences_hide_headings_but_section_hash_includes_code(self):
+        source = ('## Auth\nRules.\n````markdown\n## Auth\n```\n# Example\n'
+                  '~~~~\n````\n~~~python\n## Auth\n~~~\n## Other\nElsewhere.\n')
+        self.put("docs/guide.md", source)
+        self.link("docs/guide.md#Auth")
+        self.run_cli("check")
+        self.run_cli("link", "docs/auth.md", "docs/guide.md#Example", code=2)
+        self.put("docs/guide.md", source.replace("# Example", "# Changed example"))
+        self.run_cli("check", code=1)
+        # A fence closed with trailing text is not a closing fence.
+        self.put("docs/guide.md", "## Auth\n```\n``` extra\n## Auth\n")
+        self.run_cli("link", "docs/auth.md", "docs/guide.md#Auth", "-a")
+        self.run_cli("check")
+
+    def test_markdown_unicode_crlf_offsets_and_closing_hashes(self):
+        source = "# Préface\r\nRésumé.\r\n  ## Café Guide ###\r\nBody.\r\n# End\r\n"
+        path = self.put("docs/guide.md", "")
+        path.write_bytes(source.encode("utf-8"))
+        self.link("docs/guide.md#Café Guide")
+        self.assertEqual(self.state()["bindings"][0]["target"], "docs/guide.md#café-guide")
+        path.write_bytes(source.replace("Résumé.", "More préface text.").encode("utf-8"))
+        self.run_cli("check")
+        path.write_bytes(source.replace("Body.", "Body changed.").encode("utf-8"))
+        self.run_cli("check", code=1)
+
+    def test_markdown_limited_heading_syntax_and_encoding(self):
+        self.put("docs/guide.md", "Auth\n====\n    # Indented\n> # Quoted\n#NoSpace\n")
+        for name in ("Auth", "Indented", "Quoted", "NoSpace", "!!!"):
+            self.run_cli("link", "docs/auth.md", f"docs/guide.md#{name}", code=2)
+        (self.root / "docs/guide.md").write_bytes(b"# Auth\n\xff\n")
+        self.assertIn("UTF-8", self.run_cli("link", "docs/auth.md", "docs/guide.md#Auth", code=2).stderr)
+        self.assertFalse((self.root / TOOL.LOCKFILE).exists())
+
+    def test_inline_discovery_deduplicates_doc_relative_files_symbols_and_headings(self):
+        (self.root / ".git").mkdir()
+        self.put("src/client.py", "class Client:\n    def connect(self):\n        return 1\n")
+        self.put("docs/guide.md", "## Token Validation\nRules.\n")
+        self.put("docs/auth.md", 'Uses @./../src/auth.go, `@./../src/client.py#Client.connect`.\n'
+                 'See (@./guide.md#token-validation).\nAgain @./../src/auth.go!\n')
+        self.run_cli("link", "auth.md", cwd=self.root / "docs")
+        targets = [b["target"] for b in self.state()["bindings"]]
+        self.assertEqual(targets, ["docs/guide.md#token-validation", "src/auth.go", "src/client.py#Client.connect"])
+        before = self.lock_bytes()
+        self.run_cli("link", "docs/auth.md")
+        self.assertEqual(self.lock_bytes(), before)
+        self.run_cli("check")
+        self.assertEqual(self.run_cli("refs", "src/client.py").stdout, "docs/auth.md\n")
+        self.put("src/auth.go", "package changed\n")
+        self.run_cli("check", "--changed", "src/auth.go", code=1)
+        self.run_cli("link", "docs/auth.md", code=2)
+        self.assertEqual(self.lock_bytes(), before)
+        self.run_cli("link", "docs/auth.md", "--ack")
+        self.run_cli("check")
+
+    def test_inline_fenced_indented_escaped_and_email_examples_are_ignored(self):
+        self.put("docs/auth.md", 'Use @./../src/auth.go.\n'
+                 '````markdown\n@./missing.py\n```\n@./still-hidden.py\n````\n'
+                 '~~~ example\n@./also-missing.py\n~~~\n'
+                 '    @./indented.py\n\t@./tabbed.py\n'
+                 r'Escaped \@./escaped.py and email@./email.py' + '\n')
+        self.run_cli("link", "docs/auth.md")
+        self.assertEqual([b["target"] for b in self.state()["bindings"]], ["src/auth.go"])
+        self.run_cli("check")
+
+    def test_inline_discovery_and_explicit_bindings_are_atomic_and_retained(self):
+        self.link()
+        self.put("src/new.py", "def run():\n    pass\n")
+        self.put("docs/auth.md", "Use @./../src/new.py#run and @./missing.py.\n")
+        before = self.lock_bytes()
+        self.run_cli("link", "docs/auth.md", "-a", code=2)
+        self.assertEqual(self.lock_bytes(), before)
+        self.put("docs/auth.md", "Use @./../src/new.py#run.\n")
+        # Targeted link intentionally doesn't discover other inline references.
+        self.run_cli("link", "docs/auth.md", "src/auth.go")
+        self.assertEqual(self.lock_bytes(), before)
+        self.run_cli("link", "docs/auth.md")
+        self.assertEqual(len(self.state()["bindings"]), 2)
+        self.put("docs/auth.md", "No inline references remain.\n")
+        self.run_cli("link", "docs/auth.md")
+        self.assertEqual(len(self.state()["bindings"]), 2)
+        self.run_cli("unlink", "docs/auth.md", "src/new.py#run")
+        self.assertEqual(len(self.state()["bindings"]), 1)
+
+    def test_inline_new_references_do_not_bypass_existing_review_gate(self):
+        self.link()
+        self.put("src/new.py", "def run():\n    pass\n")
+        self.put("docs/auth.md", "Use @./../src/new.py#run.\n")
+        self.put("src/auth.go", "package changed\n")
+        before = self.lock_bytes()
+        self.run_cli("link", "docs/auth.md", code=2)
+        self.assertEqual(self.lock_bytes(), before)
+        self.run_cli("link", "docs/auth.md", "-a")
+        self.assertEqual(len(self.state()["bindings"]), 2)
+        self.run_cli("check")
+
+    def test_inline_reference_cannot_escape_root(self):
+        self.link()
+        before = self.lock_bytes()
+        with tempfile.TemporaryDirectory() as external:
+            outside = Path(external) / "outside.py"
+            outside.write_text("pass\n")
+            (self.root / "docs/outside.py").symlink_to(outside)
+            self.put("docs/auth.md", "Use @./outside.py.\n")
+            self.assertIn("outside root", self.run_cli("link", "docs/auth.md", "-a", code=2).stderr)
+            self.assertEqual(self.lock_bytes(), before)
+
+    def test_markdown_binding_mode_and_fragment_validation(self):
+        self.put("docs/guide.md", "# Auth\nBody.\n")
+        self.link("docs/guide.md#Auth")
+        valid = self.state()
+        for field, value in (("mode", TOOL.BYTES_MODE), ("target", "docs/guide.md#Auth"),
+                             ("target", "src/auth.go#auth")):
+            with self.subTest(field=field, value=value):
+                self.save_state({"version": 1, "bindings": [{**valid["bindings"][0], field: value}]})
+                self.run_cli("check", code=2)
+
+
 if __name__ == "__main__":
     unittest.main()
