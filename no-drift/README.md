@@ -1,8 +1,10 @@
 # no-drift
 
-Bind Markdown documentation to code and flag targets that have changed since their last review. A small Python tool inspired by [fiberplane/drift](https://github.com/fiberplane/drift), with no third-party dependencies.
+When you change code, it’s easy to forget to update the documentation. no-drift remembers which code each document describes and reminds you to review the document when that code changes.
 
-Requires **Python 3.12 or newer**, on macOS or Linux. Developed and tested with Python 3.12.8. Checking fingerprints uses files on disk, including uncommitted changes; it needs no Git history or Git executable.
+A small Python tool inspired by [fiberplane/drift](https://github.com/fiberplane/drift), with no third-party dependencies.
+
+Requires **Python 3.12 or newer**, on macOS or Linux. Developed and tested with Python 3.12.8. It checks your current files, including changes you haven’t committed, and does not need Git history or a Git executable.
 
 ## Run or install
 
