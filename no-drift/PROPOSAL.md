@@ -1,6 +1,6 @@
 # no-drift: Python implementation proposal
 
-Status: proposal only; no implementation yet.
+Status: implemented in `no_drift.py`; see [README.md](README.md) for usage.
 
 ## Recommendation
 
