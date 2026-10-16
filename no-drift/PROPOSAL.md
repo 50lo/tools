@@ -1,6 +1,6 @@
 # no-drift: Python implementation proposal
 
-Status: implemented in `no_drift.py`; see [README.md](README.md) for usage.
+Status: the original first version is implemented in `no_drift.py`. Markdown heading sections and inline references were subsequently added; see [README.md](README.md) for current behavior. The scope discussion below records the original proposal.
 
 ## Recommendation
 
